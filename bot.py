@@ -10,6 +10,15 @@ load_dotenv()
 VALID_SUBJECTS = ["bangla", "eng", "chem", "bio", "phys", "hmath", "ict"]
 NO_PAPER_SUBJECTS = ["ict"]
 
+MY_TELEGRAM_ID = 1607298724
+
+# Add as many trigger-reply pairs as you want here
+FIXED_REPLIES = {
+    "ovrar ki kora uchit?": "porashuna kora",
+    "shiropa onek cute": "hard agree",
+    # "another trigger": "another reply",
+}
+
 
 def parse_message(text):
     text = text.strip().lower()
@@ -47,11 +56,11 @@ def parse_message(text):
     if subject_code not in VALID_SUBJECTS:
         return {"error": f"Unknown subject code '{subject_code}'.\nValid codes are: {', '.join(VALID_SUBJECTS)}"}
 
-    show_cq      = "-cq"                        in flags
-    show_mcq     = "-mcq"                       in flags
-    show_marks   = "-marks"                     in flags
-    show_branch  = "-branch"                    in flags
-    show_central = "-merit" in flags or "-central" in flags
+    show_cq      = "-cq"     in flags
+    show_mcq     = "-mcq"    in flags
+    show_marks   = "-marks"  in flags
+    show_branch  = "-branch" in flags
+    show_central = "-merit"  in flags or "-central" in flags
 
     return {
         "nickname":     nickname,
@@ -73,6 +82,20 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text
     if not text.lower().startswith("/ubot"):
         return
+
+    # Extract the part after /ubot
+    query = text.strip()
+    if query.lower().startswith("/ubot"):
+        query = query[len("/ubot"):].strip()
+    # Handle /ubot@botusername format
+    if query.startswith("@"):
+        query = query.split(" ", 1)[-1].strip() if " " in query else ""
+
+    # Check fixed replies — only works if sender is you
+    if update.message.from_user.id == MY_TELEGRAM_ID:
+        if query.lower() in FIXED_REPLIES:
+            await update.message.reply_text(FIXED_REPLIES[query.lower()])
+            return
 
     parsed = parse_message(text)
 
