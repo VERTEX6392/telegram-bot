@@ -16,7 +16,7 @@ MY_TELEGRAM_ID = 1607298724
 FIXED_REPLIES = {
     "ovrar ki kora uchit?": "porashuna kora",
     "shiropa onek cute": "hard agree",
-    # "another trigger": "another reply",
+    # "love you": "same to you sir",
 }
 
 
