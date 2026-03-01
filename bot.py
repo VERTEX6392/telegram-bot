@@ -18,7 +18,8 @@ FIXED_REPLIES = {
     "shiropa onek cute": "hard agree",
     "sayaner ki kora uchit?": "dhumay prem kora",
     "shirshar ki kora uchit?": "ekta proper reality check khawa",
-    "shiropar ki kora uchit?": "Weight loss."
+    "shiropar ki kora uchit?": "Weight loss.",
+    "tomar ki kora uchit?": "tomader number dekhe hasha",
     # "another trigger": "another reply",
 }
 
