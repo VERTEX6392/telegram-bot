@@ -8,7 +8,7 @@ SUBJECT_MAP = {
     "bangla": "Bangla",
     "eng":    "English",
     "chem":   "Chemistry",
-    "bio":    "Biology / Statistics / Engineering Drawing",
+    "bio":    "Biology",
     "phys":   "Physics",
     "hmath":  "Higher Math",
     "ict":    "ICT",
