@@ -184,8 +184,52 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
     await update.message.reply_text(help_text, parse_mode="Markdown")
 
+async def add_student(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.message.from_user.id != 1607298724:
+        await update.message.reply_text("You are not authorized to use this command.")
+        return
+
+    if len(context.args) != 3:
+        await update.message.reply_text(
+            "Invalid format.\n"
+            "Use: `/addstudent nickname registration password`\n"
+            "Example: `/addstudent ovra 1739257 mypassword`",
+            parse_mode="Markdown"
+        )
+        return
+
+    nickname = context.args[0].lower()
+    reg      = context.args[1]
+    password = context.args[2]
+
+    # Check if already exists
+    from students import STUDENTS
+    if nickname in STUDENTS:
+        await update.message.reply_text(f"Student *{nickname}* already exists. Edit `students.py` manually to update.", parse_mode="Markdown")
+        return
+
+    # Append to students.py permanently
+    new_entry = f'    "{nickname}": {{\n        "reg": "{reg}",\n        "password": "{password}"\n    }},\n'
+
+    students_path = os.path.join(os.path.dirname(__file__), "students.py")
+    with open(students_path, "r") as f:
+        content = f.read()
+
+    # Insert before the closing } of the STUDENTS dict
+    insertion_point = content.rfind("}")
+    updated_content = content[:insertion_point] + new_entry + content[insertion_point:]
+
+    with open(students_path, "w") as f:
+        f.write(updated_content)
+
+    # Also add to the live STUDENTS dict so it works immediately without restart
+    from students import STUDENTS
+    STUDENTS[nickname] = {"reg": reg, "password": password}
+
+    await update.message.reply_text(f"Student *{nickname}* added successfully.", parse_mode="Markdown")
 
 app = ApplicationBuilder().token(os.getenv("BOT_TOKEN")).build()
 app.add_handler(CommandHandler("start", start))
 app.add_handler(MessageHandler(filters.TEXT, handle_message))
+app.add_handler(CommandHandler("addstudent", add_student))
 app.run_polling(allowed_updates=Update.ALL_TYPES)
