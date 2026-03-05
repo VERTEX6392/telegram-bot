@@ -1,0 +1,1 @@
+enter users name in config.js before redistributing among users. 
