@@ -25,17 +25,16 @@ RUN apt-get update && apt-get install -y \
     wget \
     && rm -rf /var/lib/apt/lists/*
 
-# Set working directory
 WORKDIR /app
 
-# Copy all project files
 COPY . .
 
-# Install Python dependencies
 RUN pip install -r requirements.txt
 
-# Install Chromium via Playwright
 RUN playwright install chromium
 
-# Run the bot
+# Expose the signal server port
+EXPOSE 5000
+
+ENV PYTHONUNBUFFERED=1
 CMD ["python", "bot.py"]

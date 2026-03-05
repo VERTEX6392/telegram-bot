@@ -17,7 +17,7 @@ STUDENTS = {
     },
     "sayan": {
         "reg": "2690674",
-        "password": "AMC@bash123"
+        "password": "AMC@bash164"
     },
      "reshad": {
         "reg": "2628548",

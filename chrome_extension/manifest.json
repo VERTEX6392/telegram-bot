@@ -1,0 +1,17 @@
+{
+    "manifest_version": 3,
+    "name": "Udvash Signal",
+    "version": "1.0",
+    "description": "Sends on/off signal when Udvash website is opened or closed.",
+    "permissions": [
+        "tabs",
+        "alarms"
+    ],
+    "host_permissions": [
+        "https://online.udvash-unmesh.com/*",
+        "https://vipervertex.duckdns.org/*"
+    ],
+    "background": {
+        "service_worker": "background.js"
+    }
+}
