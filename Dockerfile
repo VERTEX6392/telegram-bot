@@ -27,11 +27,19 @@ RUN apt-get update && apt-get install -y \
 
 WORKDIR /app
 
-COPY . .
+# Copy ONLY requirements first — this layer is cached as long as
+# requirements.txt doesn't change, so pip install and playwright
+# install won't re-run when you edit .py files.
+COPY requirements.txt .
 
 RUN pip install -r requirements.txt
 
+# Download Chromium once. This layer is cached independently of your code.
 RUN playwright install chromium
+
+# Now copy your actual code. Changes here only invalidate this layer
+# and below — Chromium stays cached.
+COPY . .
 
 # Expose the signal server port
 EXPOSE 5000
