@@ -1,0 +1,12 @@
+STUDENTS = {
+    "ovra": {
+        "reg": "69420",
+        "password": "randompass"
+    },
+    "ankan": {
+        "reg": "42069",
+        "password": "randompass"
+    },
+    # Add more students below in the same format
+}
+

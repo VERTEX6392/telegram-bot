@@ -29,7 +29,8 @@ FIXED_REPLIES = {
     "ovrar ki kora uchit?": "porashuna kora",
     "shiropa onek cute": "hard agree",
     "sayaner ki kora uchit?": "dhumay haat mara",
-    "ankaner ki kora uchit?":"ankan ke? chinina to!",
+    "ankaner ki kora uchit?": "ankan ke? chinina to!",
+    "reshader ki kora uchit?": "aro handsome howa:,
     "shirshar ki kora uchit?": "ekta proper reality check khawa",
     "shiropar ki kora uchit?": "Weight loss.",
     "tomar ki kora uchit?": "tomader number dekhe hasha",
@@ -38,6 +39,7 @@ FIXED_REPLIES = {
     "love you": "*blushes cutely*",
     "goodnight": "Goodnight soldier. Stay strong rest well.",
     "tumi ki shohomot?": "100% shohomot",
+    "lb": "lb",
 }
 
 # ── Shared state ──────────────────────────────────────────────────────────────
