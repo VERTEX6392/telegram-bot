@@ -41,6 +41,7 @@ FIXED_REPLIES = {
     "tumi ki shohomot?": "100% shohomot",
     "lb": "lb",
     "sieg": "heil",
+    "porte bosho": "porte bhalo lage na",
 }
 
 # ── Shared state ──────────────────────────────────────────────────────────────
