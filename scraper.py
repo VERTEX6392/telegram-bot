@@ -2,7 +2,17 @@ from playwright.async_api import async_playwright
 from students import STUDENTS
 
 LOGIN_URL = "https://online.udvash-unmesh.com/Account/Login"
-DATA_URL  = "https://online.udvash-unmesh.com/Performance/Report?programId=68&sessionId=66&t=0&d=0"
+
+# Most students are on programId=68. A couple of students are enrolled under a
+# different course (different programId) but sit the same EAP exams, same table
+# layout — only the program/course differs. Set student["program_id"] in
+# students.py to override this per student; anyone without it falls back here.
+DEFAULT_PROGRAM_ID = "68"
+SESSION_ID         = "66"
+
+
+def _report_url(program_id):
+    return f"https://online.udvash-unmesh.com/Performance/Report?programId={program_id}&sessionId={SESSION_ID}&t=0&d=0"
 
 # Subject letters as they appear inside EAP Daily exam names, e.g. "P-01", "C-02", "M-01"
 VALID_DAILY_SUBJECTS = ["p", "c", "m"]
@@ -33,7 +43,8 @@ async def _login_and_goto_report(page, student):
     await page.click("button[type='submit']")
     await page.wait_for_load_state("domcontentloaded")
 
-    await page.goto(DATA_URL, wait_until="domcontentloaded")
+    program_id = student.get("program_id", DEFAULT_PROGRAM_ID)
+    await page.goto(_report_url(program_id), wait_until="domcontentloaded")
 
     try:
         await page.wait_for_selector("table tr td", timeout=20000)
@@ -185,6 +196,83 @@ async def fetch_weekly(nickname, serial,
 
     exam_label = matched[COL_EXAM_NAME]
     return _format_result(nickname, exam_label, matched, show_cq, show_mcq, show_marks, show_branch, show_central, icon="📆")
+
+
+async def fetch_total(nickname):
+    """
+    Pulls the 'Course Merit Calculation' table at the bottom of the report page.
+    Columns: 0 Serial | 1 Course Name | 2 Total MCQ Marks | 3 Total Written Marks
+             | 4 Total Obtained Marks | 5 Total Deduction | 6 Highest Marks
+             | 7 Course Branch Merit | 8 Course Central Merit
+    """
+    nickname = nickname.lower()
+
+    if nickname not in STUDENTS:
+        return f"No student found with nickname '{nickname}'. Check the spelling."
+
+    student = STUDENTS[nickname]
+
+    async with async_playwright() as p:
+        browser = await p.chromium.launch(headless=True)
+        page = await browser.new_page()
+        page.set_default_timeout(60000)
+
+        loaded = await _login_and_goto_report(page, student)
+        if not loaded:
+            await browser.close()
+            return "Results table did not load in time. Try again."
+
+        tables = await page.query_selector_all("table")
+
+        merit_table = None
+        for table in tables:
+            text = await table.inner_text()
+            if "Course Name" in text and "Course Branch Merit" in text:
+                merit_table = table
+                break
+
+        if not merit_table:
+            await browser.close()
+            return "Could not find the course merit table."
+
+        rows = await merit_table.query_selector_all("tr")
+
+        data_rows = []
+        for row in rows:
+            cells = [await cell.inner_text() for cell in await row.query_selector_all("td, th")]
+            cells = [c.strip() for c in cells]
+            if len(cells) >= 9 and cells[0].isdigit():
+                data_rows.append(cells)
+
+        await browser.close()
+
+    if not data_rows:
+        return "No course merit data available yet."
+
+    data_row = data_rows[0]
+
+    course_name    = data_row[1]
+    mcq_marks      = data_row[2]
+    written_marks  = data_row[3]
+    obtained_marks = data_row[4]
+    deduction      = data_row[5]
+    highest_marks  = data_row[6]
+    branch_merit   = data_row[7]
+    central_merit  = data_row[8]
+
+    lines = [
+        f"📊 *{nickname.upper()} — Course Merit*",
+        f"Course: {course_name}",
+        f"Total MCQ Marks: {mcq_marks}",
+        f"Total Written Marks: {written_marks}",
+        f"Total Obtained Marks: {obtained_marks}",
+        f"Deduction: {deduction}",
+        f"Highest Marks: {highest_marks}",
+        f"Branch Merit: {branch_merit}",
+        f"Central Merit: {central_merit}",
+    ]
+
+    return "\n".join(lines)
 
 
 async def fetch_eap_list(nickname):

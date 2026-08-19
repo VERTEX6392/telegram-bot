@@ -8,7 +8,7 @@ import json
 from telegram import Update
 from telegram.ext import ApplicationBuilder, MessageHandler, CommandHandler, filters, ContextTypes
 from dotenv import load_dotenv
-from scraper import fetch_daily, fetch_weekly, fetch_eap_list
+from scraper import fetch_daily, fetch_weekly, fetch_eap_list, fetch_total
 
 load_dotenv()
 
@@ -24,24 +24,7 @@ SIGNAL_PORT   = int(os.getenv("SIGNAL_PORT", 5000))
 
 FIXED_REPLIES = {
     "ovrar ki kora uchit?": "porashuna kora",
-    "shiropa onek cute": "hard agree",
-    "sayaner ki kora uchit?": "dhumay haat mara",
-    "ankaner ki kora uchit?": "aro koyta magi dhora",
-    "reshader ki kora uchit?": "aro handsome howa",
-    "shirshar ki kora uchit?": "ekta proper reality check khawa",
-    "shiropar ki kora uchit?": "Weight loss.",
-    "tomar ki kora uchit?": "tomader number dekhe hasha",
-    "gali de": "bainchod kuttachoda besshamagi nodirput halarbhai khankirpola lewrachoda gushkirpola dhemnamagi chutmarani madarchod aluchoda potolchoda ut-khankir-dim condomchoda dinosaurchoda",
-    "jore gali de":"BAINCHOD  KUTTACHODA  BESSHAMAGI  NODIRPUT  HALARBHAI  KHANKIRPOLA  LEWRACHODA  GUSHKIRPOLA  DHEMNAMAGI  CHUTMARANI  MADARCHOD  ALUCHODA  POTOLCHODA  UT-KHANKIR-DIM  CONDOMCHODA  DINOSAURCHODA",
-    "love you": "*blushes cutely*",
-    "goodnight": "Goodnight soldier. Stay strong rest well.",
-    "tumi ki shohomot?": "100% shohomot",
-    "lb": "lb",
-    "sieg": "heil",
-    "porte bosho": "porte bhalo lage na",
-    "gg": "wp",
 }
-
 
 # ── Shared state ──────────────────────────────────────────────────────────────
 
@@ -167,6 +150,10 @@ def parse_message(text):
     if subcommand == "eap" and len(parts) >= 3 and parts[2] == "list":
         return {"list": True, "nickname": nickname}
 
+    # /ubot nickname total
+    if subcommand == "total":
+        return {"total": True, "nickname": nickname}
+
     # /ubot nickname daily p1 1 [-flags]
     if subcommand == "daily":
         if len(parts) < 4:
@@ -279,6 +266,12 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(result, parse_mode="Markdown")
         return
 
+    if parsed.get("total"):
+        await update.message.reply_text("Fetching course merit, please wait...")
+        result = await fetch_total(parsed["nickname"])
+        await update.message.reply_text(result, parse_mode="Markdown")
+        return
+
     await update.message.reply_text("Fetching result, please wait...")
 
     if parsed.get("daily"):
@@ -367,6 +360,8 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "`-marks` — both MCQ and Written marks\n"
         "`-branch` — branch merit\n"
         "`-merit` — central merit\n\n"
+        "*Course merit:*\n"
+        "`/ubot nickname total` — overall course merit summary\n\n"
         "*Debug:*\n"
         "`/ubot nickname eap list` — list all EAP exams found on the report page\n\n"
         "*Switching results on/off:*\n"
