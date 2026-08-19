@@ -8,14 +8,11 @@ import json
 from telegram import Update
 from telegram.ext import ApplicationBuilder, MessageHandler, CommandHandler, filters, ContextTypes
 from dotenv import load_dotenv
-from scraper import fetch_result, fetch_total, fetch_booster, fetch_model_result
-from routine_handler import get_upcoming_all, get_upcoming_subject
+from scraper import fetch_daily, fetch_weekly, fetch_eap_list
 
 load_dotenv()
 
-VALID_SUBJECTS = ["bangla", "eng", "chem", "bio", "phys", "hmath", "ict"]
-NO_PAPER_SUBJECTS = ["ict"]
-BOOSTER_VALID_SUBJECTS = ["bangla", "chem", "bio", "phys", "hmath", "ict"]
+VALID_DAILY_SUBJECTS = ["p", "c", "m"]
 
 MY_TELEGRAM_ID = 1607298724
 
@@ -42,7 +39,9 @@ FIXED_REPLIES = {
     "lb": "lb",
     "sieg": "heil",
     "porte bosho": "porte bhalo lage na",
+    "gg": "wp",
 }
+
 
 # ── Shared state ──────────────────────────────────────────────────────────────
 
@@ -134,6 +133,16 @@ def run_signal_server():
 
 # ── Telegram bot logic ────────────────────────────────────────────────────────
 
+def _parse_flags(flags):
+    return {
+        "show_cq":      "-cq"     in flags,
+        "show_mcq":     "-mcq"    in flags,
+        "show_marks":   "-marks"  in flags,
+        "show_branch":  "-branch" in flags,
+        "show_central": "-merit"  in flags or "-central" in flags,
+    }
+
+
 def parse_message(text):
     text = text.strip().lower()
 
@@ -143,103 +152,75 @@ def parse_message(text):
         text = text.split(" ", 1)[-1].strip() if " " in text else ""
 
     parts = text.split()
-    if len(parts) < 1:
+    if len(parts) < 2:
         return None
 
-    nickname = parts[0]
-    exam_part = parts[1] if len(parts) > 1 else None
-    flags = parts[2:]
+    nickname   = parts[0]
+    subcommand = parts[1]
 
-    if nickname == "upcoming":
-        if exam_part is None:
-            return {"upcoming": True}
-        match_with_paper = re.match(r'^([a-z]+)-(\d+)$', exam_part)
-        match_no_paper   = re.match(r'^([a-z]+)$', exam_part)
-        if match_with_paper:
-            return {
-                "upcoming":     True,
-                "subject_code": match_with_paper.group(1),
-                "paper_no":     match_with_paper.group(2),
-            }
-        elif match_no_paper and match_no_paper.group(1) in NO_PAPER_SUBJECTS:
-            return {
-                "upcoming":     True,
-                "subject_code": match_no_paper.group(1),
-                "paper_no":     None,
-            }
-        else:
-            return {"error": "Invalid subject format.\nExample: `/ubot upcoming phys-1` or `/ubot upcoming ict`"}
-
-    if exam_part is None:
-        return None
-
-    if exam_part == "off":
+    if subcommand == "off":
         return {"switch": "off", "nickname": nickname}
-    if exam_part == "on":
+    if subcommand == "on":
         return {"switch": "on", "nickname": nickname}
 
-    if exam_part == "total":
-        if len(parts) >= 3 and parts[2] == "booster":
-            return {"total": True, "total_booster": True, "nickname": nickname}
-        return {"total": True, "nickname": nickname}
+    # /ubot nickname eap list
+    if subcommand == "eap" and len(parts) >= 3 and parts[2] == "list":
+        return {"list": True, "nickname": nickname}
 
-    # Model exam: /ubot nickname subject-paper model  (or /ubot nickname ict model)
-    if len(parts) >= 3 and parts[2] == "model":
-        match_model         = re.match(r'^([a-z]+)-(\d+)$', exam_part)
-        match_model_nopaper = re.match(r'^([a-z]+)$', exam_part)
-        if match_model:
-            subject_code = match_model.group(1)
-            paper_no     = match_model.group(2)
-            if subject_code not in VALID_SUBJECTS:
-                return {"error": f"Unknown subject code '{subject_code}'.\nValid codes are: {', '.join(VALID_SUBJECTS)}"}
-            return {"model": True, "nickname": nickname, "subject_code": subject_code, "paper_no": paper_no}
-        elif match_model_nopaper and match_model_nopaper.group(1) in NO_PAPER_SUBJECTS:
-            subject_code = match_model_nopaper.group(1)
-            return {"model": True, "nickname": nickname, "subject_code": subject_code, "paper_no": None}
-        else:
-            return {"error": "Invalid format for model exam.\nExample: `/ubot ovra hmath-1 model` or `/ubot ovra ict model`"}
+    # /ubot nickname daily p1 1 [-flags]
+    if subcommand == "daily":
+        if len(parts) < 4:
+            return {"error": "Invalid format.\nExample: `/ubot ovra daily p1 1`"}
 
-    # Booster: /ubot nickname subject booster
-    if len(parts) >= 3 and parts[2] == "booster":
-        subject_code = exam_part
-        if subject_code not in BOOSTER_VALID_SUBJECTS:
-            return {"error": f"'{subject_code}' is not available in the booster course.\nValid subjects: {', '.join(BOOSTER_VALID_SUBJECTS)}"}
-        return {"booster": True, "nickname": nickname, "subject_code": subject_code}
+        subj_index_token = parts[2]
+        part_token        = parts[3]
+        flags             = parts[4:]
 
-    match_no_paper   = re.match(r'^([a-z]+)-(\d+)$', exam_part)
-    match_with_paper = re.match(r'^([a-z]+)-(\d+)-(\d+)$', exam_part)
+        match = re.match(r'^([pcm])(\d+)$', subj_index_token)
+        if not match:
+            return {
+                "error": (
+                    "Invalid daily format.\n"
+                    "Use: `/ubot nickname daily <subject><index> <part>`\n"
+                    "Example: `/ubot ovra daily p1 1`\n"
+                    f"Valid subjects: {', '.join(VALID_DAILY_SUBJECTS)}"
+                )
+            }
 
-    if match_with_paper:
-        subject_code = match_with_paper.group(1)
-        paper_no     = match_with_paper.group(2)
-        exam_serial  = match_with_paper.group(3)
-    elif match_no_paper and match_no_paper.group(1) in NO_PAPER_SUBJECTS:
-        subject_code = match_no_paper.group(1)
-        paper_no     = "1"
-        exam_serial  = match_no_paper.group(2)
-    else:
-        return None
+        subject_code = match.group(1)
+        index        = match.group(2)
 
-    if subject_code not in VALID_SUBJECTS:
-        return {"error": f"Unknown subject code '{subject_code}'.\nValid codes are: {', '.join(VALID_SUBJECTS)}"}
+        if not part_token.isdigit():
+            return {"error": "Part number must be a number.\nExample: `/ubot ovra daily p1 1`"}
 
-    show_cq      = "-cq"     in flags
-    show_mcq     = "-mcq"    in flags
-    show_marks   = "-marks"  in flags
-    show_branch  = "-branch" in flags
-    show_central = "-merit"  in flags or "-central" in flags
+        return {
+            "daily":        True,
+            "nickname":     nickname,
+            "subject_code": subject_code,
+            "index":        index,
+            "part":         part_token,
+            **_parse_flags(flags),
+        }
 
-    return {
-        "nickname":     nickname,
-        "subject_code": subject_code,
-        "paper_no":     paper_no,
-        "exam_serial":  exam_serial,
-        "show_cq":      show_cq,
-        "show_mcq":     show_mcq,
-        "show_marks":   show_marks,
-        "show_branch":  show_branch,
-        "show_central": show_central,
-    }
+    # /ubot nickname weekly 1 [-flags]
+    if subcommand == "weekly":
+        if len(parts) < 3:
+            return {"error": "Invalid format.\nExample: `/ubot ovra weekly 1`"}
+
+        serial_token = parts[2]
+        flags        = parts[3:]
+
+        if not serial_token.isdigit():
+            return {"error": "Weekly exam number must be a number.\nExample: `/ubot ovra weekly 1`"}
+
+        return {
+            "weekly":   True,
+            "nickname": nickname,
+            "serial":   serial_token,
+            **_parse_flags(flags),
+        }
+
+    return None
 
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -265,26 +246,17 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if parsed is None:
         await update.message.reply_text(
             "Invalid format.\n"
-            "Use: `/ubot nickname subject-paper-exam`\n"
-            "Example: `/ubot ovra chem-1-01`\n"
-            "For ICT: `/ubot ovra ict-01`\n"
-            "For course total: `/ubot ovra total`\n"
-            "For booster result: `/ubot ovra hmath booster`\n"
-            "For upcoming exams: `/ubot upcoming` or `/ubot upcoming chem-1`",
+            "Use: `/ubot nickname daily <subject><index> <part>`\n"
+            "Example: `/ubot ovra daily p1 1`\n"
+            "Use: `/ubot nickname weekly <exam number>`\n"
+            "Example: `/ubot ovra weekly 1`\n"
+            "Debug: `/ubot ovra eap list`",
             parse_mode="Markdown"
         )
         return
 
     if "error" in parsed:
-        await update.message.reply_text(parsed["error"])
-        return
-
-    if parsed.get("upcoming"):
-        if "subject_code" in parsed:
-            result = get_upcoming_subject(parsed["subject_code"], parsed.get("paper_no"))
-        else:
-            result = get_upcoming_all()
-        await update.message.reply_text(result, parse_mode="Markdown")
+        await update.message.reply_text(parsed["error"], parse_mode="Markdown")
         return
 
     if parsed.get("switch"):
@@ -301,36 +273,41 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(f"Results for *{parsed['nickname']}* are currently disabled.", parse_mode="Markdown")
         return
 
+    if parsed.get("list"):
+        await update.message.reply_text("Fetching EAP exam list, please wait...")
+        result = await fetch_eap_list(parsed["nickname"])
+        await update.message.reply_text(result, parse_mode="Markdown")
+        return
+
     await update.message.reply_text("Fetching result, please wait...")
 
-    if parsed.get("total"):
-        result = await fetch_total(parsed["nickname"], booster=parsed.get("total_booster", False))
+    if parsed.get("daily"):
+        result = await fetch_daily(
+            nickname     = parsed["nickname"],
+            subject_code = parsed["subject_code"],
+            index        = parsed["index"],
+            part         = parsed["part"],
+            show_cq      = parsed["show_cq"],
+            show_mcq     = parsed["show_mcq"],
+            show_marks   = parsed["show_marks"],
+            show_branch  = parsed["show_branch"],
+            show_central = parsed["show_central"],
+        )
         await update.message.reply_text(result, parse_mode="Markdown")
         return
 
-    if parsed.get("booster"):
-        result = await fetch_booster(parsed["nickname"], parsed["subject_code"])
+    if parsed.get("weekly"):
+        result = await fetch_weekly(
+            nickname     = parsed["nickname"],
+            serial       = parsed["serial"],
+            show_cq      = parsed["show_cq"],
+            show_mcq     = parsed["show_mcq"],
+            show_marks   = parsed["show_marks"],
+            show_branch  = parsed["show_branch"],
+            show_central = parsed["show_central"],
+        )
         await update.message.reply_text(result, parse_mode="Markdown")
         return
-
-    if parsed.get("model"):
-        result = await fetch_model_result(parsed["nickname"], parsed["subject_code"], parsed["paper_no"])
-        await update.message.reply_text(result, parse_mode="Markdown")
-        return
-
-    result = await fetch_result(
-        nickname     = parsed["nickname"],
-        subject_code = parsed["subject_code"],
-        paper_no     = parsed["paper_no"],
-        exam_serial  = parsed["exam_serial"],
-        show_cq      = parsed["show_cq"],
-        show_mcq     = parsed["show_mcq"],
-        show_marks   = parsed["show_marks"],
-        show_branch  = parsed["show_branch"],
-        show_central = parsed["show_central"],
-    )
-
-    await update.message.reply_text(result, parse_mode="Markdown")
 
 
 async def add_student(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -375,32 +352,23 @@ async def add_student(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     help_text = (
-        "👋 *Result Bot — Udvash*\n\n"
-        "Send a message in this format:\n"
-        "`/ubot nickname subject-paper-exam`\n\n"
-        "*Examples:*\n"
-        "`/ubot ovra chem-1-01` — all stats\n"
-        "`/ubot ovra eng-2-01 -mcq -merit` — MCQ marks + central merit only\n"
-        "`/ubot ovra phys-1-01 -cq -branch` — Written marks + branch merit\n"
-        "`/ubot ovra ict-01` — ICT has no paper number\n"
-        "`/ubot ovra total` — full course merit summary\n"
-        "`/ubot ovra total booster` — booster course merit summary\n\n"
-        "*Booster results:*\n"
-        "`/ubot ovra hmath booster` — MCQ Booster result for Higher Math\n"
-        "`/ubot ovra chem booster` — MCQ Booster result for Chemistry\n"
-        "_(English not available in booster)_\n\n"
-        "*Flags (optional):*\n"
-        "`-cq` — Written/CQ marks\n"
+        "👋 *EAP Result Bot — Udvash*\n\n"
+        "*Daily exams:*\n"
+        "`/ubot nickname daily <subject><index> <part>`\n"
+        "Example: `/ubot ovra daily p1 1` — Physics daily exam 1, part 1\n"
+        "Example: `/ubot ovra daily m2 2` — Higher Math daily exam 2, part 2\n"
+        f"Valid subjects: {', '.join(VALID_DAILY_SUBJECTS)} (p = Physics, c = Chemistry, m = Higher Math)\n\n"
+        "*Weekly exams:*\n"
+        "`/ubot nickname weekly <exam number>`\n"
+        "Example: `/ubot ovra weekly 1`\n\n"
+        "*Flags (optional, add after the command):*\n"
+        "`-cq` — Written marks\n"
         "`-mcq` — MCQ marks\n"
         "`-marks` — both MCQ and Written marks\n"
         "`-branch` — branch merit\n"
         "`-merit` — central merit\n\n"
-        "*Subject codes:*\n"
-        "`bangla` `eng` `chem` `bio` `phys` `hmath` `ict`\n\n"
-        "*Upcoming exams:*\n"
-        "`/ubot upcoming` — next upcoming exam\n"
-        "`/ubot upcoming chem-1` — next upcoming Chemistry 1st paper\n"
-        "`/ubot upcoming ict` — next upcoming ICT exam\n\n"
+        "*Debug:*\n"
+        "`/ubot nickname eap list` — list all EAP exams found on the report page\n\n"
         "*Switching results on/off:*\n"
         "`/ubot ovra off` — disable results for ovra\n"
         "`/ubot ovra on` — enable results for ovra"
