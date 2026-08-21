@@ -9,6 +9,7 @@ from telegram import Update
 from telegram.ext import ApplicationBuilder, MessageHandler, CommandHandler, filters, ContextTypes
 from dotenv import load_dotenv
 from scraper import fetch_daily, fetch_weekly, fetch_eap_list, fetch_total
+from pdf_creator import get_daily_result_pdf, get_weekly_result_pdf
 
 load_dotenv()
 
@@ -24,22 +25,6 @@ SIGNAL_PORT   = int(os.getenv("SIGNAL_PORT", 5000))
 
 FIXED_REPLIES = {
     "ovrar ki kora uchit?": "porashuna kora",
-    "shiropa onek cute": "hard agree",
-    "sayaner ki kora uchit?": "dhumay haat mara",
-    "ankaner ki kora uchit?": "aro koyta magi dhora",
-    "reshader ki kora uchit?": "aro handsome howa",
-    "shirshar ki kora uchit?": "ekta proper reality check khawa",
-    "shiropar ki kora uchit?": "Weight loss.",
-    "tomar ki kora uchit?": "tomader number dekhe hasha",
-    "gali de": "bainchod kuttachoda besshamagi nodirput halarbhai khankirpola lewrachoda gushkirpola dhemnamagi chutmarani madarchod aluchoda potolchoda ut-khankir-dim condomchoda dinosaurchoda",
-    "jore gali de":"BAINCHOD  KUTTACHODA  BESSHAMAGI  NODIRPUT  HALARBHAI  KHANKIRPOLA  LEWRACHODA  GUSHKIRPOLA  DHEMNAMAGI  CHUTMARANI  MADARCHOD  ALUCHODA  POTOLCHODA  UT-KHANKIR-DIM  CONDOMCHODA  DINOSAURCHODA",
-    "love you": "*blushes cutely*",
-    "goodnight": "Goodnight soldier. Stay strong rest well.",
-    "tumi ki shohomot?": "100% shohomot",
-    "lb": "lb",
-    "sieg": "heil",
-    "porte bosho": "porte bhalo lage na",
-    "gg": "wp",
 }
 
 # ── Shared state ──────────────────────────────────────────────────────────────
@@ -139,6 +124,7 @@ def _parse_flags(flags):
         "show_marks":   "-marks"  in flags,
         "show_branch":  "-branch" in flags,
         "show_central": "-merit"  in flags or "-central" in flags,
+        "show_result":  "-result" in flags,
     }
 
 
@@ -288,9 +274,23 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(result, parse_mode="Markdown")
         return
 
-    await update.message.reply_text("Fetching result, please wait...")
+    is_pdf_request = parsed.get("show_result", False)
+    await update.message.reply_text(
+        "Fetching result PDF, please wait..." if is_pdf_request else "Fetching result, please wait..."
+    )
 
     if parsed.get("daily"):
+        if parsed.get("show_result"):
+            await _send_result_pdf(
+                update,
+                kind="daily",
+                nickname=parsed["nickname"],
+                subject_code=parsed["subject_code"],
+                index=parsed["index"],
+                part=parsed["part"],
+            )
+            return
+
         result = await fetch_daily(
             nickname     = parsed["nickname"],
             subject_code = parsed["subject_code"],
@@ -306,6 +306,15 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     if parsed.get("weekly"):
+        if parsed.get("show_result"):
+            await _send_result_pdf(
+                update,
+                kind="weekly",
+                nickname=parsed["nickname"],
+                serial=parsed["serial"],
+            )
+            return
+
         result = await fetch_weekly(
             nickname     = parsed["nickname"],
             serial       = parsed["serial"],
@@ -317,6 +326,36 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         await update.message.reply_text(result, parse_mode="Markdown")
         return
+
+
+async def _send_result_pdf(update: Update, kind, nickname, **kwargs):
+    """Fetches (or reuses a cached) Analysis Report PDF and sends it to the user."""
+    if kind == "daily":
+        pdf_path, status = await get_daily_result_pdf(
+            nickname=nickname,
+            subject_code=kwargs["subject_code"],
+            index=kwargs["index"],
+            part=kwargs["part"],
+        )
+    else:
+        pdf_path, status = await get_weekly_result_pdf(
+            nickname=nickname,
+            serial=kwargs["serial"],
+        )
+
+    if pdf_path is None:
+        # status holds the error message in this case
+        await update.message.reply_text(status)
+        return
+
+    caption = f"📄 *{nickname.upper()} — Result PDF*"
+    if status == "cached":
+        caption += "\n_(served from cache)_"
+    elif status == "pending":
+        caption += "\n_(⚠️ solution/answer key not published yet — this will be re-fetched next time)_"
+
+    with open(pdf_path, "rb") as f:
+        await update.message.reply_document(document=f, filename=os.path.basename(pdf_path), caption=caption, parse_mode="Markdown")
 
 
 async def add_student(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -375,7 +414,8 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "`-mcq` — MCQ marks\n"
         "`-marks` — both MCQ and Written marks\n"
         "`-branch` — branch merit\n"
-        "`-merit` — central merit\n\n"
+        "`-merit` — central merit\n"
+        "`-result` — get the full Analysis Report as a PDF instead of a text summary\n\n"
         "*Course merit:*\n"
         "`/ubot nickname total` — overall course merit summary\n\n"
         "*Debug:*\n"

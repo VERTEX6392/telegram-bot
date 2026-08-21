@@ -1,5 +1,4 @@
 FROM python:3.11-slim
-
 # Install system dependencies that Chromium needs
 RUN apt-get update && apt-get install -y \
     libglib2.0-0 \
@@ -12,37 +11,48 @@ RUN apt-get update && apt-get install -y \
     libdrm2 \
     libxkbcommon0 \
     libx11-6 \
+    libx11-xcb1 \
+    libxcb1 \
     libxcomposite1 \
+    libxcursor1 \
     libxdamage1 \
     libxext6 \
     libxfixes3 \
+    libxi6 \
     libxrandr2 \
+    libxrender1 \
+    libxtst6 \
     libgbm1 \
     libpango-1.0-0 \
+    libpangocairo-1.0-0 \
     libcairo2 \
     libasound2 \
     libexpat1 \
+    ca-certificates \
+    xdg-utils \
     wget \
+    # Fonts — python:3.11-slim ships with none of these by default.
+    # fonts-liberation covers general Latin text (same as Playwright's own
+    # official Docker images). Debian doesn't ship a standalone Bengali font
+    # package — Bengali (and most other non-Latin scripts) is bundled into
+    # fonts-noto-core. Without it, the EAP Analysis Report PDFs (which mix
+    # English and Bengali) would render Bengali as blank boxes.
+    fonts-liberation \
+    fonts-noto-core \
+    fontconfig \
     && rm -rf /var/lib/apt/lists/*
-
 WORKDIR /app
-
 # Copy ONLY requirements first — this layer is cached as long as
 # requirements.txt doesn't change, so pip install and playwright
 # install won't re-run when you edit .py files.
 COPY requirements.txt .
-
 RUN pip install -r requirements.txt
-
 # Download Chromium once. This layer is cached independently of your code.
 RUN playwright install chromium
-
 # Now copy your actual code. Changes here only invalidate this layer
 # and below — Chromium stays cached.
 COPY . .
-
 # Expose the signal server port
 EXPOSE 5000
-
 ENV PYTHONUNBUFFERED=1
 CMD ["python", "bot.py"]

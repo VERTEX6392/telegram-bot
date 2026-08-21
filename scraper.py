@@ -25,10 +25,12 @@ VALID_DAILY_SUBJECTS = ["p", "c", "m"]
 COL_EXAM_NAME     = 2
 COL_MCQ_MARKS     = 4
 COL_WRITTEN_MARKS = 5
+COL_DEDUCTION     = 6
 COL_TOTAL_MARKS   = 7
 COL_HIGHEST_MARKS = 8
 COL_BRANCH_MERIT  = 9
 COL_CENTRAL_MERIT = 10
+COL_ACTION        = 11
 
 
 async def _login_and_goto_report(page, student):
@@ -56,15 +58,27 @@ async def _login_and_goto_report(page, student):
 
 
 async def _get_eap_rows(page):
-    """Return cell-lists for every row whose Exam Name starts with 'EAP'."""
+    """
+    Return a list of dicts for every row whose Exam Name starts with 'EAP':
+      {"cells": [...], "action_href": str | None}
+    action_href is the 'View Result' link's href (Action column), when present —
+    used to navigate to the per-exam Analysis Report page for PDF generation.
+    """
     rows = await page.query_selector_all("table tr")
 
     eap_rows = []
     for row in rows:
-        cells = [await cell.inner_text() for cell in await row.query_selector_all("td, th")]
+        cell_elements = await row.query_selector_all("td, th")
+        cells = [await cell.inner_text() for cell in cell_elements]
         cells = [c.strip() for c in cells]
+
         if len(cells) > COL_CENTRAL_MERIT and cells[COL_EXAM_NAME].strip().lower().startswith("eap"):
-            eap_rows.append(cells)
+            action_href = None
+            if len(cell_elements) > COL_ACTION:
+                link = await cell_elements[COL_ACTION].query_selector("a")
+                if link:
+                    action_href = await link.get_attribute("href")
+            eap_rows.append({"cells": cells, "action_href": action_href})
 
     return eap_rows
 
@@ -72,6 +86,7 @@ async def _get_eap_rows(page):
 def _format_result(nickname, exam_label, cells, show_cq, show_mcq, show_marks, show_branch, show_central, icon="📋"):
     mcq_marks     = cells[COL_MCQ_MARKS]
     written_marks = cells[COL_WRITTEN_MARKS]
+    deduction     = cells[COL_DEDUCTION]
     total_marks   = cells[COL_TOTAL_MARKS]
     highest       = cells[COL_HIGHEST_MARKS]
     branch_merit  = cells[COL_BRANCH_MERIT]
@@ -86,6 +101,7 @@ def _format_result(nickname, exam_label, cells, show_cq, show_mcq, show_marks, s
     if show_all or show_cq or show_marks:
         lines.append(f"Written Marks: {written_marks}")
     if show_all:
+        lines.append(f"Deduction: {deduction}")
         lines.append(f"Total Marks: {total_marks}")
         lines.append(f"Highest Marks: {highest}")
     if show_all or show_branch:
@@ -130,7 +146,8 @@ async def fetch_daily(nickname, subject_code, index, part,
         await browser.close()
 
     matched = None
-    for cells in eap_rows:
+    for row in eap_rows:
+        cells = row["cells"]
         exam_name = cells[COL_EXAM_NAME].lower()
         if "daily" in exam_name and frag_subject_index in exam_name and frag_part in exam_name:
             matched = cells
@@ -181,7 +198,8 @@ async def fetch_weekly(nickname, serial,
         await browser.close()
 
     matched = None
-    for cells in eap_rows:
+    for row in eap_rows:
+        cells = row["cells"]
         exam_name = cells[COL_EXAM_NAME].lower()
         if "weekly" in exam_name and any(frag in exam_name for frag in frag_candidates):
             matched = cells
@@ -301,7 +319,8 @@ async def fetch_eap_list(nickname):
         return "No EAP exams found on the report page yet."
 
     lines = [f"🔎 *{nickname.upper()} — EAP exams found:*"]
-    for cells in eap_rows:
+    for row in eap_rows:
+        cells = row["cells"]
         date = cells[1]
         name = cells[COL_EXAM_NAME]
         lines.append(f"`{date}` — {name}")
