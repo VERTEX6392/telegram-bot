@@ -100,8 +100,8 @@ def _format_result(nickname, exam_label, cells, show_cq, show_mcq, show_marks, s
         lines.append(f"MCQ Marks: {mcq_marks}")
     if show_all or show_cq or show_marks:
         lines.append(f"Written Marks: {written_marks}")
+    lines.append(f"Deduction: {deduction}")
     if show_all:
-        lines.append(f"Deduction: {deduction}")
         lines.append(f"Total Marks: {total_marks}")
         lines.append(f"Highest Marks: {highest}")
     if show_all or show_branch:

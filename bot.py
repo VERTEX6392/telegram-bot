@@ -124,7 +124,7 @@ def _parse_flags(flags):
         "show_marks":   "-marks"  in flags,
         "show_branch":  "-branch" in flags,
         "show_central": "-merit"  in flags or "-central" in flags,
-        "show_result":  "-result" in flags,
+        "show_result":  "pdf"     in flags,
     }
 
 
@@ -415,7 +415,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "`-marks` — both MCQ and Written marks\n"
         "`-branch` — branch merit\n"
         "`-merit` — central merit\n"
-        "`-result` — get the full Analysis Report as a PDF instead of a text summary\n\n"
+        "`pdf` — get the full Analysis Report as a PDF instead of a text summary\n\n"
         "*Course merit:*\n"
         "`/ubot nickname total` — overall course merit summary\n\n"
         "*Debug:*\n"
