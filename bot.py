@@ -8,8 +8,8 @@ import json
 from telegram import Update
 from telegram.ext import ApplicationBuilder, MessageHandler, CommandHandler, filters, ContextTypes
 from dotenv import load_dotenv
-from scraper import fetch_daily, fetch_weekly, fetch_eap_list, fetch_total
-from pdf_creator import get_daily_result_pdf, get_weekly_result_pdf
+from scraper import fetch_daily, fetch_daily_offline, fetch_weekly, fetch_eap_list, fetch_total
+from pdf_creator import get_daily_result_pdf, get_daily_offline_result_pdf, get_weekly_result_pdf
 
 load_dotenv()
 
@@ -25,6 +25,22 @@ SIGNAL_PORT   = int(os.getenv("SIGNAL_PORT", 5000))
 
 FIXED_REPLIES = {
     "ovrar ki kora uchit?": "porashuna kora",
+    "shiropa onek cute": "hard agree",
+    "sayaner ki kora uchit?": "dhumay haat mara",
+    "ankaner ki kora uchit?": "aro koyta magi dhora",
+    "reshader ki kora uchit?": "aro handsome howa",
+    "shirshar ki kora uchit?": "ekta proper reality check khawa",
+    "shiropar ki kora uchit?": "Weight loss.",
+    "tomar ki kora uchit?": "tomader number dekhe hasha",
+    "gali de": "bainchod kuttachoda besshamagi nodirput halarbhai khankirpola lewrachoda gushkirpola dhemnamagi chutmarani madarchod aluchoda potolchoda ut-khankir-dim condomchoda dinosaurchoda",
+    "jore gali de":"BAINCHOD  KUTTACHODA  BESSHAMAGI  NODIRPUT  HALARBHAI  KHANKIRPOLA  LEWRACHODA  GUSHKIRPOLA  DHEMNAMAGI  CHUTMARANI  MADARCHOD  ALUCHODA  POTOLCHODA  UT-KHANKIR-DIM  CONDOMCHODA  DINOSAURCHODA",
+    "love you": "*blushes cutely*",
+    "goodnight": "Goodnight soldier. Stay strong rest well.",
+    "tumi ki shohomot?": "100% shohomot",
+    "lb": "lb",
+    "sieg": "heil",
+    "porte bosho": "porte bhalo lage na",
+    "gg": "wp",
 }
 
 # ── Shared state ──────────────────────────────────────────────────────────────
@@ -157,9 +173,33 @@ def parse_message(text):
         return {"total": True, "nickname": nickname}
 
     # /ubot nickname daily p1 1 [-flags]
+    # /ubot nickname daily offline c-1 [-flags]
     if subcommand == "daily":
         if len(parts) < 4:
             return {"error": "Invalid format.\nExample: `/ubot ovra daily p1 1`"}
+
+        if parts[2] == "offline":
+            subj_index_token = parts[3]
+            flags            = parts[4:]
+
+            match = re.match(r'^([pcm])-?(\d+)$', subj_index_token)
+            if not match:
+                return {
+                    "error": (
+                        "Invalid daily offline format.\n"
+                        "Use: `/ubot nickname daily offline <subject>-<index>`\n"
+                        "Example: `/ubot ovra daily offline c-1`\n"
+                        f"Valid subjects: {', '.join(VALID_DAILY_SUBJECTS)}"
+                    )
+                }
+
+            return {
+                "daily_offline": True,
+                "nickname":      nickname,
+                "subject_code":  match.group(1),
+                "index":         match.group(2),
+                **_parse_flags(flags),
+            }
 
         subj_index_token = parts[2]
         part_token        = parts[3]
@@ -305,6 +345,30 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(result, parse_mode="Markdown")
         return
 
+    if parsed.get("daily_offline"):
+        if parsed.get("show_result"):
+            await _send_result_pdf(
+                update,
+                kind="daily_offline",
+                nickname=parsed["nickname"],
+                subject_code=parsed["subject_code"],
+                index=parsed["index"],
+            )
+            return
+
+        result = await fetch_daily_offline(
+            nickname     = parsed["nickname"],
+            subject_code = parsed["subject_code"],
+            index        = parsed["index"],
+            show_cq      = parsed["show_cq"],
+            show_mcq     = parsed["show_mcq"],
+            show_marks   = parsed["show_marks"],
+            show_branch  = parsed["show_branch"],
+            show_central = parsed["show_central"],
+        )
+        await update.message.reply_text(result, parse_mode="Markdown")
+        return
+
     if parsed.get("weekly"):
         if parsed.get("show_result"):
             await _send_result_pdf(
@@ -336,6 +400,12 @@ async def _send_result_pdf(update: Update, kind, nickname, **kwargs):
             subject_code=kwargs["subject_code"],
             index=kwargs["index"],
             part=kwargs["part"],
+        )
+    elif kind == "daily_offline":
+        pdf_path, status = await get_daily_offline_result_pdf(
+            nickname=nickname,
+            subject_code=kwargs["subject_code"],
+            index=kwargs["index"],
         )
     else:
         pdf_path, status = await get_weekly_result_pdf(
@@ -406,6 +476,9 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "Example: `/ubot ovra daily p1 1` — Physics daily exam 1, part 1\n"
         "Example: `/ubot ovra daily m2 2` — Higher Math daily exam 2, part 2\n"
         f"Valid subjects: {', '.join(VALID_DAILY_SUBJECTS)} (p = Physics, c = Chemistry, m = Higher Math)\n\n"
+        "*Daily offline exams (MCQ and Written, no part number):*\n"
+        "`/ubot nickname daily offline <subject>-<index>`\n"
+        "Example: `/ubot ovra daily offline c-1`\n\n"
         "*Weekly exams:*\n"
         "`/ubot nickname weekly <exam number>`\n"
         "Example: `/ubot ovra weekly 1`\n\n"

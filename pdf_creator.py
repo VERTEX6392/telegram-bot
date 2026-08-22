@@ -59,8 +59,6 @@ async def _render_report_pdf(nickname, student, predicate, fallback_key, not_fou
     """
     async with async_playwright() as p:
         browser = await p.chromium.launch(headless=True)
-        # Wide viewport so the site renders its full desktop layout rather
-        # than a cramped/overlay layout that hides content behind the sidebar.
         page = await browser.new_page(viewport={"width": 1600, "height": 1000})
         page.set_default_timeout(60000)
 
@@ -105,28 +103,18 @@ async def _render_report_pdf(nickname, student, predicate, fallback_key, not_fou
 
         await page.emulate_media(media="screen")
 
-        # The portal's left nav rail (Dashboard / Add Course / ... ) is
-        # position:fixed (or sticky). In a normal browser it just sits in
-        # place while you scroll, but Chromium's print-to-PDF repeats any
-        # fixed/sticky element on *every* printed page, and since it never
-        # collapses in headless mode (no one clicks the hamburger toggle),
-        # it overlaps the left edge of the report content throughout the
-        # whole PDF. Rather than hardcode its selector (fragile if the site's
-        # markup changes), detect anything computed as fixed/sticky and hide
-        # it right before rendering, then let the content reflow full-width.
+        # The portal's left nav sidebar is position:fixed/sticky, so Playwright's
+        # print-to-PDF repeats it over every page, overlaying report content.
+        # Rather than targeting the sidebar's specific CSS classes (fragile if
+        # the markup changes), hide every fixed/sticky-positioned element
+        # generically right before snapshotting.
         await page.evaluate("""
-            () => {
-                document.querySelectorAll('*').forEach(el => {
-                    const cs = window.getComputedStyle(el);
-                    if (cs.position === 'fixed' || cs.position === 'sticky') {
-                        el.style.setProperty('display', 'none', 'important');
-                    }
-                });
-                document.documentElement.style.setProperty('overflow', 'visible', 'important');
-                document.body.style.setProperty('overflow', 'visible', 'important');
-                document.body.style.setProperty('margin-left', '0', 'important');
-                document.body.style.setProperty('padding-left', '0', 'important');
-            }
+            document.querySelectorAll('*').forEach(el => {
+                const pos = window.getComputedStyle(el).position;
+                if (pos === 'fixed' || pos === 'sticky') {
+                    el.style.setProperty('display', 'none', 'important');
+                }
+            });
         """)
 
         tmp_path = cache_path + ".tmp"
@@ -167,6 +155,32 @@ async def get_daily_result_pdf(nickname, subject_code, index, part):
         return "daily" in exam_name and frag_subject_index in exam_name and frag_part in exam_name
 
     fallback_key = f"daily-{subject_letter}{index_padded}-p{part_padded}"
+
+    return await _render_report_pdf(nickname, student, predicate, fallback_key, label)
+
+
+async def get_daily_offline_result_pdf(nickname, subject_code, index):
+    nickname = nickname.lower()
+
+    if nickname not in STUDENTS:
+        return None, f"No student found with nickname '{nickname}'. Check the spelling."
+
+    if subject_code not in VALID_DAILY_SUBJECTS:
+        return None, f"Unknown subject '{subject_code}'. Valid subjects: {', '.join(VALID_DAILY_SUBJECTS)}"
+
+    student = STUDENTS[nickname]
+
+    subject_letter = subject_code.upper()
+    index_padded   = index.zfill(2)
+
+    frag_subject_index = f"{subject_letter}-{index_padded}".lower()
+    label = f"{subject_letter}-{index_padded} (offline)"
+
+    def predicate(cells):
+        exam_name = cells[COL_EXAM_NAME].lower()
+        return "daily" in exam_name and frag_subject_index in exam_name and "part" not in exam_name
+
+    fallback_key = f"daily-offline-{subject_letter}{index_padded}"
 
     return await _render_report_pdf(nickname, student, predicate, fallback_key, label)
 

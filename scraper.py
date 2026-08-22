@@ -100,8 +100,8 @@ def _format_result(nickname, exam_label, cells, show_cq, show_mcq, show_marks, s
         lines.append(f"MCQ Marks: {mcq_marks}")
     if show_all or show_cq or show_marks:
         lines.append(f"Written Marks: {written_marks}")
-    lines.append(f"Deduction: {deduction}")
     if show_all:
+        lines.append(f"Deduction: {deduction}")
         lines.append(f"Total Marks: {total_marks}")
         lines.append(f"Highest Marks: {highest}")
     if show_all or show_branch:
@@ -156,6 +156,61 @@ async def fetch_daily(nickname, subject_code, index, part,
     if not matched:
         label = f"{subject_letter}-{index_padded} Part-{part_padded}"
         return f"No daily result found for {label}. Check the subject, index, and part number."
+
+    exam_label = matched[COL_EXAM_NAME]
+    return _format_result(nickname, exam_label, matched, show_cq, show_mcq, show_marks, show_branch, show_central, icon="📋")
+
+
+async def fetch_daily_offline(nickname, subject_code, index,
+                               show_cq, show_mcq, show_marks, show_branch, show_central):
+    """
+    Handles the newer 'EAP Daily MCQ and Written Exam C-01' exam type. Unlike the
+    regular Daily exams, these have no Part number in the name — they're
+    identified purely by subject + index. We still gate on "daily" being in the
+    name, but explicitly require "part" to be ABSENT so this never accidentally
+    matches a regular Daily exam that happens to contain the same subject-index
+    fragment (e.g. both could contain "c-01").
+    """
+    nickname = nickname.lower()
+
+    if nickname not in STUDENTS:
+        return f"No student found with nickname '{nickname}'. Check the spelling."
+
+    if subject_code not in VALID_DAILY_SUBJECTS:
+        return f"Unknown subject '{subject_code}'. Valid subjects: {', '.join(VALID_DAILY_SUBJECTS)}"
+
+    student = STUDENTS[nickname]
+
+    subject_letter = subject_code.upper()
+    index_padded   = index.zfill(2)
+
+    # e.g. "C-01"
+    frag_subject_index = f"{subject_letter}-{index_padded}".lower()
+
+    async with async_playwright() as p:
+        browser = await p.chromium.launch(headless=True)
+        page = await browser.new_page()
+        page.set_default_timeout(60000)
+
+        loaded = await _login_and_goto_report(page, student)
+        if not loaded:
+            await browser.close()
+            return "Results table did not load in time. Try again."
+
+        eap_rows = await _get_eap_rows(page)
+        await browser.close()
+
+    matched = None
+    for row in eap_rows:
+        cells = row["cells"]
+        exam_name = cells[COL_EXAM_NAME].lower()
+        if "daily" in exam_name and frag_subject_index in exam_name and "part" not in exam_name:
+            matched = cells
+            break
+
+    if not matched:
+        label = f"{subject_letter}-{index_padded} (offline)"
+        return f"No daily offline result found for {label}. Check the subject and index."
 
     exam_label = matched[COL_EXAM_NAME]
     return _format_result(nickname, exam_label, matched, show_cq, show_mcq, show_marks, show_branch, show_central, icon="📋")
