@@ -83,6 +83,16 @@ async def _get_eap_rows(page):
     return eap_rows
 
 
+def _is_result_published(cells):
+    """A student's exam is evaluated once the MCQ Marks cell has an actual
+    value — empty/blank/'-'/'N/A' means it hasn't been checked yet. This is
+    more reliable than scanning page text for "will be published" style
+    notices, which can refer to unrelated site-wide stats (Highest Marks,
+    Merit Position) rather than this student's own result."""
+    mcq_marks_cell = cells[COL_MCQ_MARKS].strip()
+    return bool(mcq_marks_cell) and mcq_marks_cell not in ("-", "--", "N/A")
+
+
 def _format_result(nickname, exam_label, cells, show_cq, show_mcq, show_marks, show_branch, show_central, icon="📋"):
     mcq_marks     = cells[COL_MCQ_MARKS]
     written_marks = cells[COL_WRITTEN_MARKS]
@@ -156,6 +166,10 @@ async def fetch_daily(nickname, subject_code, index, part,
     if not matched:
         label = f"{subject_letter}-{index_padded} Part-{part_padded}"
         return f"No daily result found for {label}. Check the subject, index, and part number."
+
+    if not _is_result_published(matched):
+        label = f"{subject_letter}-{index_padded} Part-{part_padded}"
+        return f"Result for {label} hasn't been evaluated yet. Try again later."
 
     exam_label = matched[COL_EXAM_NAME]
     return _format_result(nickname, exam_label, matched, show_cq, show_mcq, show_marks, show_branch, show_central, icon="📋")
@@ -266,6 +280,9 @@ async def fetch_weekly(nickname, serial,
             "Note: weekly exam-name format hasn't been confirmed yet — "
             "try `nickname eap list` to see raw EAP exam names and check the match."
         )
+
+    if not _is_result_published(matched):
+        return f"Result for weekly exam {serial_padded} hasn't been evaluated yet. Try again later."
 
     exam_label = matched[COL_EXAM_NAME]
     return _format_result(nickname, exam_label, matched, show_cq, show_mcq, show_marks, show_branch, show_central, icon="📆")

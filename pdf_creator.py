@@ -8,6 +8,7 @@ from scraper import (
     _login_and_goto_report,
     _get_eap_rows,
     COL_EXAM_NAME,
+    COL_MCQ_MARKS,
     VALID_DAILY_SUBJECTS,
 )
 
@@ -18,11 +19,11 @@ BASE_URL = "https://online.udvash-unmesh.com"
 PDF_CACHE_DIR = os.path.join(os.path.dirname(__file__), "pdf_cache")
 os.makedirs(PDF_CACHE_DIR, exist_ok=True)
 
-# If the Analysis Report page still shows text like this, the answer key /
-# solution isn't published yet. We still render and send the PDF, but we
-# don't write it to the permanent cache — otherwise a future query would
-# keep serving a stale, incomplete copy forever.
-PENDING_PHRASES = ["will be published", "will be available"]
+# Readiness is decided from the results table's own MCQ Marks cell before we
+# ever navigate to the Analysis Report page — see _render_report_pdf.
+# (Scanning the report page's text for "will be published" is unreliable:
+# that phrase can appear for site-wide stats like Highest Marks / Merit
+# Position even when the student's own result is fully evaluated.)
 
 
 def _cache_path(nickname, exam_id):
@@ -51,10 +52,11 @@ async def _find_matching_row(page, predicate):
 
 async def _render_report_pdf(nickname, student, predicate, fallback_key, not_found_label):
     """
-    Single browser session: login -> find the row -> follow its Action link ->
-    wait for the page (math/images) to finish -> render PDF -> cache if final.
+    Single browser session: login -> find the row -> check MCQ Marks is
+    published -> follow its Action link -> wait for the page (math/images) to
+    finish -> render PDF -> cache.
     Returns (path_to_pdf, status) where status is one of:
-      "cached" | "generated" | "pending" | None (see message in path slot on error)
+      "cached" | "generated" (path_to_pdf is None with an error message on failure).
     On error, returns (None, error_message).
     """
     async with async_playwright() as p:
@@ -71,6 +73,20 @@ async def _render_report_pdf(nickname, student, predicate, fallback_key, not_fou
         if not row:
             await browser.close()
             return None, f"No result found for {not_found_label}. Check the details and try again."
+
+        # The results table's own MCQ Marks cell is empty/blank until this
+        # student's exam has actually been evaluated — this is a reliable,
+        # per-student signal (unlike scanning the Analysis Report page text,
+        # which can say "will be published" for site-wide stats like Highest
+        # Marks / Merit Position even though this student's own result is
+        # already in). Check it before we even bother opening that page.
+        mcq_marks_cell = row["cells"][COL_MCQ_MARKS].strip()
+        if not mcq_marks_cell or mcq_marks_cell in ("-", "--", "N/A"):
+            await browser.close()
+            return None, (
+                f"Result for {not_found_label} hasn't been evaluated yet "
+                "(MCQ marks not published). Try again later."
+            )
 
         action_href = row.get("action_href")
         if not action_href:
@@ -95,12 +111,6 @@ async def _render_report_pdf(nickname, student, predicate, fallback_key, not_fou
         except Exception:
             pass
 
-        try:
-            body_text = (await page.inner_text("body")).lower()
-        except Exception:
-            body_text = ""
-        is_pending = any(phrase in body_text for phrase in PENDING_PHRASES)
-
         await page.emulate_media(media="screen")
 
         # The portal's left nav sidebar is position:fixed/sticky, so Playwright's
@@ -121,11 +131,6 @@ async def _render_report_pdf(nickname, student, predicate, fallback_key, not_fou
         await page.pdf(path=tmp_path, format="A4", print_background=True)
 
         await browser.close()
-
-    if is_pending:
-        # Don't promote to the permanent cache path — leave the .tmp file where
-        # it is and hand it back as-is. It'll simply be regenerated next time.
-        return tmp_path, "pending"
 
     os.replace(tmp_path, cache_path)
     return cache_path, "generated"

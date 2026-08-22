@@ -421,8 +421,6 @@ async def _send_result_pdf(update: Update, kind, nickname, **kwargs):
     caption = f"📄 *{nickname.upper()} — Result PDF*"
     if status == "cached":
         caption += "\n_(served from cache)_"
-    elif status == "pending":
-        caption += "\n_(⚠️ solution/answer key not published yet — this will be re-fetched next time)_"
 
     with open(pdf_path, "rb") as f:
         await update.message.reply_document(document=f, filename=os.path.basename(pdf_path), caption=caption, parse_mode="Markdown")
